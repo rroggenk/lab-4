@@ -16,7 +16,6 @@ format:
     - icon: envelope
       href: rroggenk@calpoly.edu
       aria-label: Email
-server: shiny
 ---
 
 
@@ -26,7 +25,6 @@ server: shiny
 #| warning: false
 #| include: false 
 
-# Note: I did use Google Gemini for help on this code chunk. I was having a lot of trouble trying to combine data reading steps into one step so I can do it all at the beginning in one chunk instead of just in the code chunk of the plot, so I started doing that and then had to ask Google Gemini for help because I was genuinely crashing out. Then my code for the data cards ending up depending on this, so even though I didn't end up using it, I had to keep it all. Just wanted to be up front and open and honest, #live laugh loving life 
 
 # Load Libraries
 library(tidyverse)
@@ -41,223 +39,27 @@ library(geojsonio)
 library(DT) 
 library(ggrepel) 
 
-# --- Data Loading and Prep Code (adapted from Lab 2) ---
+# --- Data Loading and Prep Code (adapted from Lab 3) ---
 
-# Function to safely read Excel, handling potential errors
-safe_read_xlsx <- function(path, ...) {
-  tryCatch({
-    read_xlsx(path, ...)
-  }, error = function(e) {
-    message("Error reading Excel file at: ", path)
-    message("Original error: ", e$message)
-    NULL # Return NULL on error
-  })
-}
+# Data for Cards
+vaccine_data_card <- read.csv("/Users/rachelroggenkemper/Documents/STAT541/Labs/Lab4/data/vaccine_data_card.csv")
+vaccine_plot_data_card <- read.csv("/Users/rachelroggenkemper/Documents/STAT541/Labs/Lab4/data/vaccine_plot_data_card.csv")
+# Simple mean of country averages (not population weighted)
+# Use the 'vaccine_safe' average from vaccine_data
+global_avg_safe <- mean(vaccine_data_card$vaccine_safe, na.rm = TRUE) 
+# Use the 'disagree_effective_pct' average from vaccine_plot_data
+global_avg_disagree_effective <- mean(vaccine_plot_data_card$disagree_effective_pct, na.rm = TRUE)
 
-# Define base path
-excel_path <- here::here("wgm2018-dataset-crosstabs-all-countries.xlsx") #<-- CHECK PATH
 
-# Loading in full WGM dataset from Sheet 2 
-wgm2018_full_raw <- safe_read_xlsx(excel_path, sheet = 2)
+# Data for Plot 1
+vaccine_data <- read.csv("/Users/rachelroggenkemper/Documents/STAT541/Labs/Lab4/data/vaccine_data.csv")
 
-# Clean and reshape country information 
-country_names_raw <- safe_read_xlsx(excel_path, sheet = 3, range = "C2:C2", col_names = "countries")
-if (!is.null(country_names_raw)) {
-  country_names <- country_names_raw %>%
-    mutate(num_country = str_split(countries, pattern = ",")) %>%
-    unnest(num_country) %>%
-    mutate(
-      num_country = str_trim(num_country), # Trim whitespace first
-      WP5 = as.numeric(str_extract(num_country, "^\\d+")),
-      country = str_trim(str_remove(num_country, "^\\d+\\s*=\\s*"))
-    ) %>%
-    select(WP5, country) %>%
-    filter(!is.na(WP5) & nchar(country) > 0) # Ensure valid WP5 and country name
-} else {
-  country_names <- tibble(WP5 = numeric(), country = character())
-}
+# Data for Plot 2
+vaccine_plot_data <- read.csv("/Users/rachelroggenkemper/Documents/STAT541/Labs/Lab4/data/vaccine_plot_data.csv")
 
-# Clean and reshape region information 
-region_names_raw <- safe_read_xlsx(excel_path, sheet = 3, range = "C58", col_names = "regions")
-if (!is.null(region_names_raw)) {
-  region_names <- region_names_raw %>%
-    mutate(num_region = str_split(regions, ",")) %>%
-    unnest(num_region) %>%
-    mutate(
-      num_region = str_trim(num_region), # Trim whitespace first
-      Regions_Report = as.numeric(str_extract(num_region, "^\\d+")),
-      region = str_trim(str_remove(num_region, "^\\d+\\s*=\\s*"))
-    ) %>%
-    select(Regions_Report, region) %>%
-    filter(!is.na(Regions_Report) & nchar(region) > 0) # Ensure valid ID and region name
-} else {
-  region_names <- tibble(Regions_Report = numeric(), region = character())
-}
+# Data for Plot 3
+health_data <- read.csv("/Users/rachelroggenkemper/Documents/STAT541/Labs/Lab4/data/health_data.csv")
 
-# Proceed only if raw data, country names, and region names were loaded
-wgm2018_full <- NULL
-if (!is.null(wgm2018_full_raw) && nrow(country_names) > 0 && nrow(region_names) > 0) {
-  
-  # Join country and region information with full WGM data
-  wgm2018_full <- wgm2018_full_raw %>%
-    left_join(country_names, by = "WP5") %>%
-    left_join(region_names, by = "Regions_Report") %>%
-    filter(!is.na(country)) # Filter out rows without matched country
-
-  # Create global region variables (collapsed grouping) - ensure 'region' column exists
-  if ("region" %in% names(wgm2018_full)) {
-      wgm2018_full <- wgm2018_full %>%
-      mutate(
-        global_region = case_when(
-          country %in% c("Estonia", "Latvia", "Lithuania") ~ "Former Soviet Union",
-          country %in% c("Bulgaria", "Czech Republic", "Hungary", "Poland", "Romania", "Slovakia") ~ "Europe",
-          region %in% c("Middle East", "North Africa") ~ "Middle East & North Africa", # Use & for brevity
-          region %in% c("Central Asia", "Eastern Europe")  ~ "Former Soviet Union",
-          str_detect(region, "America") ~ "Americas",
-          str_detect(region, "Africa") ~ "Africa",
-          str_detect(region, "Asia") | region == "Aus/NZ" ~ "Asia & Oceania", # Combine for brevity
-          TRUE ~ "Europe" # includes "Not Assigned" - adjust if needed
-        )
-      )
-   } else {
-      message("Column 'region' not found after joins. Cannot create 'global_region'.")
-      # Assign a default or handle error appropriately
-      wgm2018_full$global_region <- "Unknown" 
-   }
-
-  # --- Data for Plot 1 (Vaccine Safety Perception - from Lab 2) ---
-  vaccine_data <- wgm2018_full %>%
-    select(global_region, country, Q25) %>%
-    mutate(vaccine_safe = case_when(
-      Q25 %in% 1:2 ~ 1,  # strongly/somewhat agree
-      Q25 %in% 3:5 ~ 0,  # neutral or disagree
-      TRUE ~ NA_real_   # don't know / refused
-    )) %>%
-    filter(!is.na(vaccine_safe)) %>% # filter NA before averaging
-    group_by(country, global_region) %>%
-    summarise(vaccine_safe = mean(vaccine_safe, na.rm = TRUE), .groups = 'drop') %>% 
-    # Recalculate regional medians and factor order after country averages
-    group_by(global_region) %>%
-    mutate(
-      region_median = median(vaccine_safe, na.rm = TRUE)
-    ) %>%
-    ungroup() %>% # Ungroup before ordering the factor
-    mutate(
-      # Order regions for plot based on Lab 2 logic (descending median)
-      global_region = fct_reorder(as.factor(global_region), vaccine_safe, .fun = median, .desc = TRUE),
-      # Identify min/max within each region group - simplified Lab 2 logic
-      min_max = case_when(
-         vaccine_safe == max(vaccine_safe, na.rm=TRUE) ~ country,
-         vaccine_safe == min(vaccine_safe, na.rm=TRUE) ~ country,
-         TRUE ~ NA_character_
-      )
-    ) %>%
-    # Ensure min_max calc happens per group
-    group_by(global_region) %>%
-    mutate(min_max = if_else(vaccine_safe == max(vaccine_safe, na.rm = TRUE) | vaccine_safe == min(vaccine_safe, na.rm = TRUE), country, NA_character_)) %>%
-    ungroup()
-
-  # --- Data for Plot 2 (Health Interest Map - from Lab 2) ---
-  health_data <- wgm2018_full %>%
-    select(country, global_region, Q7) %>%
-    filter(Q7 %in% c(1, 2)) %>% # 1=Very interested, 2=Somewhat interested
-    mutate(conf = case_when( # This matches Lab 2 logic for Q7
-      Q7 == 2 ~ 0, # Treat 'somewhat' as 0 for averaging? Lab 2 did this, seems odd but matching.
-      Q7 == 1 ~ 1  # Treat 'very' as 1
-      )) %>%
-    group_by(country, global_region) %>% # Keep global_region
-    summarise(average = mean(conf, na.rm = TRUE), .groups = 'drop') %>% # Average 0s and 1s
-    mutate(percentage = average * 100) %>% # Percentage of 'Very Interested'
-    select(country, global_region, percentage)
-
-  # --- Data for Plot 3 (Vaccine Safety vs Effectiveness Scatterplot - from Lab 2) ---
-  vaccine_plot_data <- wgm2018_full %>%
-    select(country, global_region, Q25, Q26) %>%
-    mutate(
-      # Q25: Vaccines Safe? 1=Strongly agree -> 5=Strongly disagree
-      # Lab 2 logic for disagree_safe: Q25 <= 3 ~ 0, Q25 <= 5 ~ 1 (This means 4,5 are 1)
-      disagree_safe = case_when(
-        Q25 %in% 4:5 ~ 1, # Disagree (Somewhat or Strongly)
-        Q25 %in% 1:3 ~ 0, # Agree or Neither
-        TRUE ~ NA_real_   # DK/Refused - Lab 2 used TRUE ~ 0, but NA is safer
-      ),
-      # Q26: Vaccines Effective? (Same scale)
-      # Lab 2 logic for disagree_effective: Q26 <= 3 ~ 0, Q26 <= 5 ~ 1 (This means 4,5 are 1)
-      disagree_effective = case_when(
-        Q26 %in% 4:5 ~ 1, # Disagree (Somewhat or Strongly)
-        Q26 %in% 1:3 ~ 0, # Agree or Neither
-        TRUE ~ NA_real_   # DK/Refused - Lab 2 used TRUE ~ 0, but NA is safer
-      )
-    ) %>%
-    filter(!is.na(disagree_safe) & !is.na(disagree_effective)) %>% # Remove missing before averaging
-    group_by(country, global_region) %>%
-    summarise(
-      # Calculate mean disagreement percentage directly
-      disagree_safe_pct = mean(disagree_safe, na.rm = TRUE),
-      disagree_effective_pct = mean(disagree_effective, na.rm = TRUE),
-      .groups = 'drop'
-      )
-
-  # --- Data for Cards ---
-  # Simple mean of country averages (not population weighted)
-  # Use the 'vaccine_safe' average from vaccine_data
-  global_avg_safe <- mean(vaccine_data$vaccine_safe, na.rm = TRUE) 
-  # Use the 'disagree_effective_pct' average from vaccine_plot_data
-  global_avg_disagree_effective <- mean(vaccine_plot_data$disagree_effective_pct, na.rm = TRUE)
-
-  # --- GeoJSON Loading & Merging ---
-  world_geojson_url <- "[https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json](https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json)" # Corrected URL format
-  world_geojson_sp <- tryCatch({
-    geojson_read(world_geojson_url, what = "sp")
-  }, error = function(e) {
-    message("Error reading GeoJSON from URL: ", e$message)
-    NULL 
-  })
-
-  health_data_json <- NULL # Initialize
-  if (!is.null(world_geojson_sp)) {
-    world_geojson_sf <- world_geojson_sp %>%
-      st_as_sf() %>%
-      rename(country_geo = name) %>% # Rename to avoid clash before join
-      # Manual fixes for name mismatches
-      mutate(country_match = case_when(
-        country_geo == "United States of America" ~ "United States",
-        country_geo == "Russian Federation" ~ "Russia",
-        country_geo == "United Republic of Tanzania" ~ "Tanzania",
-        country_geo == "Iran (Islamic Republic of)" ~ "Iran",
-        country_geo == "Bolivia (Plurinational State of)" ~ "Bolivia",
-        country_geo == "Venezuela (Bolivarian Republic of)" ~ "Venezuela",
-        country_geo == "Viet Nam" ~ "Vietnam",
-        country_geo == "Czechia" ~ "Czech Republic",
-        country_geo == "Republic of Moldova" ~ "Moldova",
-        country_geo == "Syrian Arab Republic" ~ "Syria",
-        country_geo == "Lao People's Democratic Republic" ~ "Laos",
-        country_geo == "Republic of Korea" ~ "South Korea",
-        # Add more fixes by comparing unique(world_geojson_sf$country_geo) and unique(health_data$country)
-        TRUE ~ country_geo
-      )) %>%
-      select(-country_geo) # Remove original geo name
-
-    # Combine health data and GeoJSON data
-    health_data_json <- world_geojson_sf %>%
-      left_join(health_data, by = c("country_match" = "country")) %>% # Join on the matched name
-      select(-country_match) # Remove the temporary match key if desired
-
-  } else {
-    message("GeoJSON loading failed. Map cannot be generated.")
-  }
-
-} else {
-  # Handle case where initial data loading failed
-  message("Initial data loading failed. Cannot proceed with data preparation.")
-  # Create empty tibbles to avoid errors later, though plots/tables will be empty
-  vaccine_data <- tibble()
-  health_data <- tibble()
-  vaccine_plot_data <- tibble()
-  global_avg_safe <- NA
-  global_avg_disagree_effective <- NA
-  health_data_json <- NULL
-}
 ```
 
 # Vaccine Views
@@ -290,28 +92,6 @@ Global Avg: Disagree Effective
 #| title: "Percentage of People who Believe Vaccines are Safe, by Country and Global Region" 
 #| fig-height: 6 
 
-vaccine_data <- wgm2018_full %>%
-  select(global_region, country, Q25) %>%
-  mutate(vaccine_safe = case_when(
-    Q25 %in% 1:2 ~ 1,  # strongly/somewhat agree
-    Q25 %in% 3:5 ~ 0,  # neutral or disagree
-    TRUE ~ NA_real_   # don't know / refused
-    )) %>%
-  # remove don't know / refused
-  filter(vaccine_safe <= 1) %>%
-  group_by(country, global_region) %>%
-  # country averages
-  summarise(vaccine_safe = mean(vaccine_safe)) %>%
-  group_by(global_region) %>%
-  # regional medians
-  mutate(
-    region_median = median(vaccine_safe),
-    global_region = fct_reorder(as.factor(global_region), desc(region_median)),
-    min_max = case_when(
-      vaccine_safe == max(vaccine_safe) ~ country,
-      vaccine_safe == min(vaccine_safe) ~ country)
-  )
-  
 vaccine_data %>%
   ggplot(aes(y = reorder(global_region, region_median), 
              x = vaccine_safe, 
@@ -372,16 +152,7 @@ vaccine_data %>%
 #| title: "Scatterplot exploring people's perceptions of vaccine safety and vaccine effectiveness"
 
 # Compiling vaccine safety/effectiveness data 
-vaccine_plot <- wgm2018_full %>%
-  select(country, Q25, Q26) %>%
-  mutate(disagree_safe = case_when(Q25 <= 3 ~ 0,
-                                   Q25 <= 5 ~ 1,
-                                   TRUE ~ 0),
-         disagree_effective = case_when(Q26 <= 3 ~ 0,
-                                        Q26 <= 5 ~ 1,
-                                        TRUE ~ 0)) %>%
-  group_by(country) %>%
-  summarise(across(c(disagree_safe, disagree_effective), mean, na.rm = TRUE)) %>%
+vaccine_plot <- vaccine_plot_data %>%
   ggplot(aes(x = disagree_safe, y = disagree_effective)) +
   geom_point(aes(text = paste0("Country: ", country, "<br>",
                                "Disagree vaccines are safe: ", 
@@ -417,52 +188,27 @@ ggplotly(vaccine_plot, tooltip = "text") %>%
 #| label: map-health-interest-lab2
 #| title: "Map of interest in learning more about medicine, disease, or health by country"
 
-# Compiling interest in knowing more about medicine, disease or health data 
-health_data <- wgm2018_full %>%
-  select(country, Q7) %>%
-  filter(Q7 %in% c(1, 2)) %>%
-  mutate(conf = case_when(
-    Q7 == 2 ~ 0,
-    Q7 == 1 ~ 1)) %>%
-  group_by(country) %>%
-  summarise(average = mean(conf, na.rm = TRUE)) %>%
-  mutate(percentage = average * 100) %>%
-  select(country, percentage)
-
-
-# Load GeoJSON data of all countries
-world_geojson <- geojson_read("https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json", what = "sp")
-
-world_geojson <- world_geojson %>%
-  st_as_sf() %>%
-  rename(country = name)
-
-# Combining health data and GeoJSON data
-health_data_json <- world_geojson %>%
-  st_as_sf() %>%
-  left_join(health_data, by = "country") 
-
-# Leaflet Map
-pallatte <- colorNumeric("plasma", domain = health_data_json$percentage)
-
-leaflet(health_data_json) %>%
-  setView(lng = 0, lat = 0, zoom = 1) %>%
-  addPolygons(stroke = FALSE, 
-              smoothFactor = 0.2, 
-              fillOpacity = 1,
-              color = ~pallatte(percentage),
-              label = paste0(health_data_json$country, ": ", 
-                             round(health_data_json$percentage, 1), "%"),
-              highlightOptions = highlightOptions(weight = 5,
-                                                  color = "#000000",
-                                                  fillOpacity = 0.7)) %>%
-  addLegend(pallatte, 
-            values = ~percentage,
-            opacity = 0.8,
-            title = "Interest level (%)",
-            position = "bottomleft",
-            labFormat = labelFormat(suffix = "%")) %>%
-  addControl(html = "<div class='map-title'>Map of interest in learning more about medicine,<br>disease, or health by country</div>",
-             position = "topright")
+# # Leaflet Map
+# pallatte <- colorNumeric("plasma", domain = health_data_json$percentage)
+# 
+# leaflet(health_data_json) %>%
+#   setView(lng = 0, lat = 0, zoom = 1) %>%
+#   addPolygons(stroke = FALSE, 
+#               smoothFactor = 0.2, 
+#               fillOpacity = 1,
+#               color = ~pallatte(percentage),
+#               label = paste0(health_data_json$country, ": ", 
+#                              round(health_data_json$percentage, 1), "%"),
+#               highlightOptions = highlightOptions(weight = 5,
+#                                                   color = "#000000",
+#                                                   fillOpacity = 0.7)) %>%
+#   addLegend(pallatte, 
+#             values = ~percentage,
+#             opacity = 0.8,
+#             title = "Interest level (%)",
+#             position = "bottomleft",
+#             labFormat = labelFormat(suffix = "%")) %>%
+#   addControl(html = "<div class='map-title'>Map of interest in learning more about medicine,<br>disease, or health by country</div>",
+#              position = "topright")
 ```
 :::
