@@ -3,7 +3,7 @@ title: "Global Health Monitor Dashboard"
 format:
   dashboard:
     theme: cosmo 
-    logo: images/Wellcome_Trust_logo.png # Replace with your logo file path if needed
+    logo: images/Wellcome_Trust_logo.png 
     orientation: columns
     nav-tabs: true
     nav-buttons:
@@ -29,12 +29,13 @@ server: shiny
 
 # Load Libraries
 library(shiny) 
-library(bslib) # <<< ADDED: For bslib::value_box
+library(bslib) 
+library(bsicons) 
 library(tidyverse)
 library(scales)
 library(plotly)
 library(DT) 
-library(ggrepel) # <<< ADDED: For geom_text_repel
+library(ggrepel) 
 
 # --- Data Loading and Prep Code ---
 
@@ -61,7 +62,7 @@ unique_regions <- sort(unique_regions)
 
 # Vaccine Views
 
-## {.sidebar}
+## {.sidebar} 
 ```{r}
 #| label: region-checkboxes
 # Checkbox input for regions
@@ -81,7 +82,6 @@ checkboxGroupInput("selected_regions",
 uiOutput("safe_avg_card") 
 ```
 
-
 ```{r}
 #| label: safe-avg-calculation
 #| context: server 
@@ -96,30 +96,27 @@ output$safe_avg_card <- renderUI({
   
   # Handle case where no data remains after filtering
   if (nrow(filtered_data) == 0) {
-    # Return a placeholder or minimal value box if no regions selected
      value_box(
-        title = "Avg: Agree/Strongly Agree Safe", # <<< MODIFIED: Clarified title
+        title = tags$span(style = "font-size: 0.8em;", "Avg: Agree/Strongly Agree Safe"), 
         value = "N/A",
-        showcase = bsicons::bs_icon("shield-slash"), # Indicate issue
-        theme_color = "secondary" 
+        showcase = bsicons::bs_icon("shield-slash"), 
+        theme_color = "secondary",
+        height = "150px" 
      )
   } else {
-      # Calculate the mean for the filtered data
       mean_val <- mean(filtered_data$vaccine_safe, na.rm = TRUE)
-      
-      # Determine color based on the mean value
       box_color <- case_when(
-        mean_val >= 0.85 ~ "success", # Green for high agreement (>=85%)
-        mean_val >= 0.70 ~ "info",    # Blue for medium agreement (>=70%)
-        TRUE             ~ "warning"  # Orange for lower agreement (<70%)
+        mean_val >= 0.85 ~ "success", 
+        mean_val >= 0.70 ~ "info",    
+        TRUE             ~ "warning" 
       )
       
-      # Construct the dynamic value box using bslib::value_box
       value_box(
-        title = "Avg: Agree/Strongly Agree Safe (Selected Regions)", # <<< MODIFIED: Clarified title
-        value = scales::percent(mean_val, accuracy = 0.1),
-        showcase = bsicons::bs_icon("shield-check"), # Use bsicons helper
-        theme_color = box_color # Use dynamic color
+        title = tags$span(style = "font-size: 0.8em;", "Avg: Agree/Strongly Agree Safe (Selected Regions)"), 
+        value = tags$span(style="font-size: 1.6em;", scales::percent(mean_val, accuracy = 0.1)), 
+        showcase = bsicons::bs_icon("shield-check"), 
+        theme_color = box_color,
+        height = "150px" 
       )
   }
 })
@@ -127,9 +124,9 @@ output$safe_avg_card <- renderUI({
 ```
 
 #### Card 2 {width=50%}
-::: {.valuebox icon="shield-x" color="danger"}
+::: {.valuebox icon="shield-x" color="danger" height="150px"}
 Global Avg: Disagree Effective
-`r scales::percent(global_avg_disagree_effective, accuracy = 0.1)` 
+<span style="font-size: 1.6em;">`r scales::percent(global_avg_disagree_effective, accuracy = 0.1)`</span>
 :::
 
 ### Row {height=75%}
@@ -142,6 +139,8 @@ Global Avg: Disagree Effective
 #| label: plot-vaccine-safety-output
 # Placeholder for the dynamic plot
 plotOutput("vaccine_safety_plot") 
+```
+
 ```{r}
 #| label: plot-vaccine-safety-render
 #| context: server 
@@ -150,25 +149,21 @@ plotOutput("vaccine_safety_plot")
 output$vaccine_safety_plot <- renderPlot({
   req(input$selected_regions) # Ensure regions are selected
   
-  # Filter data based on selected regions
   plot_data_filtered <- vaccine_data %>%
     filter(global_region %in% input$selected_regions)
   
-  # Check if any data remains after filtering
   if (nrow(plot_data_filtered) == 0) {
     plot(NULL, xlim=c(0,1), ylim=c(0,1), ann=FALSE, axes=FALSE)
     text(0.5, 0.5, "Please select at least one region.")
     return() 
   }
 
-  # Using a named color vector for robustness
   region_colors <- setNames(
       c("skyblue1", "seagreen4", "yellow2", "orangered4", "salmon1", "dodgerblue4"),
       sort(unique(vaccine_data$global_region)) 
   )
   plot_colors <- region_colors[names(region_colors) %in% input$selected_regions]
 
-  # Determine factor levels based on the full dataset's median
   ordered_levels <- levels(reorder(vaccine_data$global_region, vaccine_data$region_median))
   plot_levels <- ordered_levels[ordered_levels %in% input$selected_regions]
   
@@ -188,7 +183,6 @@ output$vaccine_safety_plot <- renderPlot({
     scale_color_manual(values = plot_colors) + 
     labs(x = NULL, 
          y = NULL,
-         # <<< MODIFIED: Clarified title
          title = "Percentage Agreeing/Strongly Agreeing Vaccines are Safe,\nby Country and Selected Global Region(s)") + 
     theme_bw() +
     theme(legend.position = "none",
@@ -202,30 +196,27 @@ output$vaccine_safety_plot <- renderPlot({
                        limits = c(0.15, 1.05), 
                        oob = scales::rescale_none) + 
     guides(color = "none") + 
-    # Add region labels 
     geom_text(aes(y = global_region, x = 0.18, label = global_region), 
               hjust = 0,
               size = 4,
               fontface = "bold",
               check_overlap = FALSE, 
               show.legend = FALSE) + 
-    # <<< MODIFIED: Use geom_text_repel for min/max labels
     ggrepel::geom_text_repel(
-              data = . %>% filter(!is.na(min_max)), # Only plot where min_max exists
+              data = . %>% filter(!is.na(min_max)), 
               aes(label = min_max), 
               size = 3, 
               color = "gray18",
               show.legend = FALSE,
-              # ggrepel adjustments
-              box.padding = 0.4, # Increase padding around text
-              point.padding = 0.2, # Padding around the point it's labeling
-              segment.color = 'grey50', # Color of line segment
-              segment.size = 0.3,     # Thickness of line segment
-              min.segment.length = 0, # Draw segments even if short
-              force = 10,             # Increase repel force
-              max.overlaps = Inf      # Allow more overlaps if needed (adjust force first)
+              box.padding = 0.4, 
+              point.padding = 0.2, 
+              segment.color = 'grey50', 
+              segment.size = 0.3,     
+              min.segment.length = 0, 
+              force = 10,             
+              max.overlaps = Inf      
               ) +
-    coord_cartesian(clip = "off") # Allow text outside plot area
+    coord_cartesian(clip = "off") 
 
 }, res = 96) 
 
@@ -238,11 +229,10 @@ This scatterplot explores the relationship between the percentage of people in a
 
 ```{r}
 #| label: plot-safety-vs-effectiveness-lab2
-#| title: "Relationship between Disagreement on Vaccine Safety and Effectiveness" # <<< MODIFIED: Shortened plotly title
+#| title: "Relationship between Disagreement on Vaccine Safety and Effectiveness" 
 
 # This plot remains static (non-reactive)
 
-# Compiling vaccine safety/effectiveness data 
 vaccine_plot <- vaccine_plot_data %>%
   ggplot(aes(x = disagree_safe, y = disagree_effective)) +
   geom_point(aes(text = paste0("Country: ", country, "<br>",
@@ -257,16 +247,14 @@ vaccine_plot <- vaccine_plot_data %>%
                      labels = label_percent()) +
   scale_y_continuous(breaks = seq(0, 1, by = 0.1),
                      labels = label_percent()) +   
-  labs(x = "Disagree Vaccines are Safe (%)", # Added axis labels for clarity
+  labs(x = "Disagree Vaccines are Safe (%)", 
        y = "Disagree Vaccines are Effective (%)") 
 
-# Turn into interactive plotly plot
 ggplotly(vaccine_plot, tooltip = "text") %>%
-  # <<< MODIFIED: Simplified layout title, removed subtitle
   layout(title = list(text = "Country-Level Vaccine Disagreement: Safety vs. Effectiveness", 
                       x = 0.01,  
                       xanchor = "left"),
-         margin = list(t = 80)) # Reduced top margin
+         margin = list(t = 80)) 
 ```
 :::
 
@@ -277,7 +265,6 @@ ggplotly(vaccine_plot, tooltip = "text") %>%
 #| label: health-interest-slider
 # Slider input for health interest percentage
 
-# Determine range from data
 min_interest <- floor(min(health_data$percentage, na.rm = TRUE)) 
 max_interest <- ceiling(max(health_data$percentage, na.rm = TRUE))
 
@@ -306,22 +293,18 @@ DTOutput("health_table")
 # Server logic to render the dynamic DT table
 
 output$health_table <- renderDT({
-  req(input$interest_threshold) # Ensure slider value is available
+  req(input$interest_threshold) 
   
-  # Filter health data based on slider input
   filtered_health_data <- health_data %>%
     filter(percentage >= input$interest_threshold) %>%
     select(Country = country, `Interest Percentage` = percentage) %>%
-    # <<< Reverted to descending sort as per previous version
-    arrange(`Interest Percentage`)
+    arrange(`Interest Percentage`) 
   
-  # Create the datatable
   datatable(filtered_health_data,
             rownames = FALSE, 
             options = list(
               pageLength = 10, 
               autoWidth = TRUE,
-              # <<< Reverted to ascending sort order
               order = list(list(1, 'asc')), 
               columnDefs = list(
                   list(className = 'dt-center', targets = "_all") 
