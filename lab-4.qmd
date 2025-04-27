@@ -39,17 +39,19 @@ library(ggrepel)
 
 # --- Data Loading and Prep Code ---
 
+data_dir <- "data" 
+
 # Data for Cards 
-vaccine_plot_data_card <- read.csv("/Users/rachelroggenkemper/Documents/STAT541/Labs/Lab4/data/vaccine_plot_data_card.csv")
+vaccine_plot_data_card <- read.csv(file.path(data_dir, "vaccine_plot_data_card.csv"))
 
 # Data for Plot 1 (also used for dynamic card)
-vaccine_data <- read.csv("/Users/rachelroggenkemper/Documents/STAT541/Labs/Lab4/data/vaccine_data.csv")
+vaccine_data <- read.csv(file.path(data_dir, "vaccine_data.csv"))
 
 # Data for Plot 2
-vaccine_plot_data <- read.csv("/Users/rachelroggenkemper/Documents/STAT541/Labs/Lab4/data/vaccine_plot_data.csv")
+vaccine_plot_data <- read.csv(file.path(data_dir, "vaccine_plot_data.csv"))
 
 # Data for Interactive Table
-health_data <- read.csv("/Users/rachelroggenkemper/Documents/STAT541/Labs/Lab4/data/health_data.csv")
+health_data <- read.csv(file.path(data_dir, "health_data.csv"))
 
 # Initial calculation for the second (static) card
 global_avg_disagree_effective <- mean(vaccine_plot_data_card$disagree_effective_pct, na.rm = TRUE)

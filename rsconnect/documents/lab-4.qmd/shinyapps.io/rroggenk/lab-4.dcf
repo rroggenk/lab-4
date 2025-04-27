@@ -1,0 +1,14 @@
+name: lab-4
+title: lab-4
+username: rroggenk
+account: rroggenk
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 14626749
+bundleId: 10187925
+url: https://rroggenk.shinyapps.io/lab-4/
+version: 1
+quarto_version: 1.5.57
+quarto_engines: knitr
+asMultiple: FALSE
+asStatic: FALSE
