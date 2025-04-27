@@ -2,8 +2,8 @@
 title: "Global Health Monitor Dashboard"
 format:
   dashboard:
-    theme: cosmo # Using a standard Bootswatch theme
-    logo: images/Wellcome_Trust_logo.png # Replace with your logo file path
+    theme: cosmo 
+    logo: images/Wellcome_Trust_logo.png
     orientation: columns
     nav-tabs: true
     nav-buttons:
