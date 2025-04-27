@@ -3,146 +3,219 @@ title: "Global Health Monitor Dashboard"
 format:
   dashboard:
     theme: cosmo 
-    logo: images/Wellcome_Trust_logo.png
+    logo: images/Wellcome_Trust_logo.png 
     orientation: columns
     nav-tabs: true
     nav-buttons:
     - icon: github
-      href: https://github.com/rroggenk/
+      href: https://github.com/rroggenk/ 
       aria-label: GitHub
     - icon: linkedin
-      href: https://www.linkedin.com/in/rroggenk/
+      href: https://www.linkedin.com/in/rroggenk/ 
       aria-label: LinkedIn
     - icon: envelope
-      href: rroggenk@calpoly.edu
+      href: mailto:rroggenk@calpoly.edu
       aria-label: Email
+server: shiny 
 ---
 
 
 ```{r}
 #| label: setup
+#| context: setup 
 #| message: false
 #| warning: false
 #| include: false 
 
-
 # Load Libraries
+library(shiny) 
 library(tidyverse)
-library(readxl)
-library(here)
 library(scales)
 library(plotly)
-library(leaflet)
-library(maps)
-library(sf)
-library(geojsonio)
 library(DT) 
-library(ggrepel) 
 
-# --- Data Loading and Prep Code (adapted from Lab 3) ---
+# --- Data Loading and Prep Code ---
 
-# Data for Cards
-vaccine_data_card <- read.csv("/Users/rachelroggenkemper/Documents/STAT541/Labs/Lab4/data/vaccine_data_card.csv")
+# Data for Cards 
 vaccine_plot_data_card <- read.csv("/Users/rachelroggenkemper/Documents/STAT541/Labs/Lab4/data/vaccine_plot_data_card.csv")
-# Simple mean of country averages (not population weighted)
-# Use the 'vaccine_safe' average from vaccine_data
-global_avg_safe <- mean(vaccine_data_card$vaccine_safe, na.rm = TRUE) 
-# Use the 'disagree_effective_pct' average from vaccine_plot_data
-global_avg_disagree_effective <- mean(vaccine_plot_data_card$disagree_effective_pct, na.rm = TRUE)
 
-
-# Data for Plot 1
+# Data for Plot 1 (also used for dynamic card)
 vaccine_data <- read.csv("/Users/rachelroggenkemper/Documents/STAT541/Labs/Lab4/data/vaccine_data.csv")
 
 # Data for Plot 2
 vaccine_plot_data <- read.csv("/Users/rachelroggenkemper/Documents/STAT541/Labs/Lab4/data/vaccine_plot_data.csv")
 
-# Data for Plot 3
+# Data for Interactive Table
 health_data <- read.csv("/Users/rachelroggenkemper/Documents/STAT541/Labs/Lab4/data/health_data.csv")
 
+# Initial calculation for the second (static) card
+global_avg_disagree_effective <- mean(vaccine_plot_data_card$disagree_effective_pct, na.rm = TRUE)
+
+# Get unique regions for checkbox input
+unique_regions <- unique(vaccine_data$global_region)
+# Ensure regions are sorted or in a desired order if necessary
+unique_regions <- sort(unique_regions) 
 ```
 
 # Vaccine Views
 
-## Column {width=20%}
+## {.sidebar}
+```{r}
+#| label: region-checkboxes
+# Checkbox input for regions
+checkboxGroupInput("selected_regions", 
+                   "Select Regions to Display:",
+                   choices = unique_regions,
+                   selected = unique_regions) # Default to all selected
+```
 
-### Row {height=50%}
-
+## Column {width=75%}
+### Row {height=25%}
+#### Card 1 {width=50%}
 ::: {.valuebox icon="shield-check" color="info"} 
-Global Avg: Agree Safe
-
-`r scales::percent(global_avg_safe, accuracy = 0.1)` 
+<span style="font-size: 0.8em;">Avg: Agree Safe (Selected Regions)</span> 
+```{r}
+#| label: safe-avg-output
+# Placeholder for dynamic text output
+textOutput("safe_avg_value", inline = TRUE) 
+```
 :::
 
-### Row {height=50%}
+```{r}
+#| label: safe-avg-calculation
+#| context: server 
+# Server logic to calculate and render the dynamic value for Card 1
 
+# Reactive calculation for the average 'vaccine_safe' based on selected regions
+filtered_safe_avg <- reactive({
+  req(input$selected_regions) # Ensure regions are selected
+  
+  # Filter vaccine_data based on selected regions
+  filtered_data <- vaccine_data %>%
+    filter(global_region %in% input$selected_regions)
+  
+  # Handle case where no data remains after filtering (though req() should prevent this)
+  if (nrow(filtered_data) == 0) {
+    return("N/A") 
+  }
+  
+  # Calculate the mean for the filtered data
+  mean_val <- mean(filtered_data$vaccine_safe, na.rm = TRUE)
+  
+  # Format as percentage string
+  scales::percent(mean_val, accuracy = 0.1)
+})
+
+# Render the calculated value into the textOutput placeholder
+output$safe_avg_value <- renderText({
+  filtered_safe_avg()
+})
+
+```
+
+#### Card 2 {width=50%}
 ::: {.valuebox icon="shield-x" color="danger"}
 Global Avg: Disagree Effective
-
-`r scales::percent(global_avg_disagree_effective, accuracy = 0.1)`
+`r scales::percent(global_avg_disagree_effective, accuracy = 0.1)` 
 :::
 
-## Column {width=80%}
+### Row {height=75%}
 
-### Perceptions {.tabset}
+#### Perceptions {.tabset}
 
 ::: {.card title="Vaccine Safety Perception by Region"}
-```{r}
-#| label: plot-vaccine-safety-lab2
-#| title: "Percentage of People who Believe Vaccines are Safe, by Country and Global Region" 
-#| fig-height: 6 
 
-vaccine_data %>%
-  ggplot(aes(y = reorder(global_region, region_median), 
-             x = vaccine_safe, 
-             color = global_region)) +
-    geom_point(aes(alpha = 0.78, 
-                   size = 3)) +
+```{r}
+#| label: plot-vaccine-safety-output
+# Placeholder for the dynamic plot
+plotOutput("vaccine_safety_plot") 
+```
+
+```{r}
+#| label: plot-vaccine-safety-render
+#| context: server 
+# Server logic to render the dynamic plot
+
+output$vaccine_safety_plot <- renderPlot({
+  req(input$selected_regions) # Ensure regions are selected
+  
+  # Filter data based on selected regions
+  plot_data_filtered <- vaccine_data %>%
+    filter(global_region %in% input$selected_regions)
+  
+  # Check if any data remains after filtering
+  if (nrow(plot_data_filtered) == 0) {
+    # Display a message if no regions are selected or no data exists
+    plot(NULL, xlim=c(0,1), ylim=c(0,1), ann=FALSE, axes=FALSE)
+    text(0.5, 0.5, "Please select at least one region.")
+    return() # Stop execution if no data
+  }
+
+  # Generate the plot with filtered data
+  # Using a named color vector for robustness if regions are filtered out
+  region_colors <- setNames(
+      c("skyblue1", "seagreen4", "yellow2", "orangered4", "salmon1", "dodgerblue4"),
+      sort(unique(vaccine_data$global_region)) # Match colors to sorted region names
+  )
+  
+  # Filter the colors to only those selected
+  plot_colors <- region_colors[names(region_colors) %in% input$selected_regions]
+
+  # Determine factor levels based on the full dataset's median for consistent ordering
+  ordered_levels <- levels(reorder(vaccine_data$global_region, vaccine_data$region_median))
+  # Filter levels to only those selected
+  plot_levels <- ordered_levels[ordered_levels %in% input$selected_regions]
+  
+  plot_data_filtered %>%
+    # Apply the filtered factor levels
+    mutate(global_region = factor(global_region, levels = plot_levels)) %>%
+    ggplot(aes(y = global_region, 
+               x = vaccine_safe, 
+               color = global_region)) +
+    geom_point(aes(alpha = 0.78), size = 3, show.legend = FALSE) + # Use fixed size/alpha
     geom_errorbar(aes(y = global_region, 
                       xmax = region_median, 
                       xmin = region_median),
                   size = 0.5, 
                   linetype = "solid", 
-                  width = 1, 
+                  width = 0.5, # Reduced width for potentially fewer regions
                   color = "black") +
-    scale_color_manual(values = c("skyblue1", "seagreen4", "yellow2",
-                                  "orangered4", "salmon1", "dodgerblue4")) +
-    geom_linerange(aes(xmin = region_median, 
-                       xmax = region_median,
-                       group = global_region)) +
+    scale_color_manual(values = plot_colors) + # Use filtered colors
     labs(x = NULL, 
          y = NULL,
-         title = "Percentage of People who Believe Vaccines are Safe,
-         \nby Country and Global Region") +
+         title = "Percentage of People who Believe Vaccines are Safe,\nby Country and Selected Global Region(s)") + 
     theme_bw() +
     theme(legend.position = "none",
           panel.grid.major.y = element_blank(),
           panel.grid.minor.y = element_blank(),
           axis.ticks.y = element_blank(),
-          axis.text.y = element_blank(),
+          axis.text.y = element_blank(), # Keep blank as labels are added via geom_text
           plot.title = element_text(face = 'bold')) +
     scale_x_continuous(breaks = seq(0.2, 1, by = 0.1),
                        labels = label_percent(),
-                       sec.axis = dup_axis()) +
-    guides(color = FALSE) +
-    geom_text(aes(y = global_region, x = 0.2, label = global_region), 
-              vjust = -1,
+                       limits = c(0.15, 1.05), # Adjust limits slightly for text
+                       oob = scales::rescale_none) + # Show points outside limits if any
+    guides(color = "none") + # Use "none" instead of FALSE
+    # Add region labels 
+    geom_text(aes(y = global_region, x = 0.18, label = global_region), # Adjusted x position
               hjust = 0,
               size = 4,
-              fontface = "bold") +
-    geom_text(aes(label = min_max),
-                    vjust = 0,
-                    hjust = 0,
-                    size = 3,
-                    color = "gray18") +
-    annotate(geom = "text",
-             x = 0.865, 
-             y = "Asia", 
-             label = "Regional Median",
-             color = "black", 
-             size = 2.5,
-             hjust = 0,
-             vjust = -3)
+              fontface = "bold",
+              check_overlap = FALSE, # Allow overlap if needed, or adjust plot height
+              show.legend = FALSE) + 
+    # Add min/max labels (ensure 'min_max' column exists in filtered data)
+    geom_text(data = . %>% filter(!is.na(min_max)), # Only plot where min_max exists
+              aes(label = min_max), 
+              vjust = -0.5, # Adjust vertical position relative to point
+              hjust = 0.5, # Center horizontally on point
+              size = 3, 
+              color = "gray18",
+              check_overlap = TRUE,
+              show.legend = FALSE) +
+    coord_cartesian(clip = "off") # Allow text outside plot area if needed
+
+}, res = 96) # Set resolution for better plot rendering
+
 ```
 :::
 
@@ -150,6 +223,8 @@ vaccine_data %>%
 ```{r}
 #| label: plot-safety-vs-effectiveness-lab2
 #| title: "Scatterplot exploring people's perceptions of vaccine safety and vaccine effectiveness"
+
+# This plot remains static (non-reactive) as per the original code and requirements.
 
 # Compiling vaccine safety/effectiveness data 
 vaccine_plot <- vaccine_plot_data %>%
@@ -165,14 +240,14 @@ vaccine_plot <- vaccine_plot_data %>%
   scale_x_continuous(breaks = seq(0, 1, by = 0.1),
                      labels = label_percent()) +
   scale_y_continuous(breaks = seq(0, 1, by = 0.1),
-                     labels = label_percent()) +    
+                     labels = label_percent()) +   
   labs(x = NULL,
        y = NULL)
 
 # Turn into interactive plotly plot
 ggplotly(vaccine_plot, tooltip = "text") %>%
   layout(title = list(text = paste0("Scatterplot exploring people's perceptions of vaccine safety <br> and vaccine effectiveness",
-                                    "<br><sup>Percentage of people who disagree that vaccines are safe by percentage of people who <br> disagree that vaccines are effective</sup>"),
+                                     "<br><sup>Percentage of people who disagree that vaccines are safe by percentage of people who <br> disagree that vaccines are effective</sup>"),
                       x = 0.01,  
                       xanchor = "left"),
          margin = list(t = 150))
@@ -181,34 +256,66 @@ ggplotly(vaccine_plot, tooltip = "text") %>%
 
 # Health Interest
 
-## Column {width=65%}
-
-::: {.card title="Map of interest in learning more about medicine, disease, or health by country"}
+## {.sidebar}
 ```{r}
-#| label: map-health-interest-lab2
-#| title: "Map of interest in learning more about medicine, disease, or health by country"
+#| label: health-interest-slider
+# Slider input for health interest percentage
 
-# # Leaflet Map
-# pallatte <- colorNumeric("plasma", domain = health_data_json$percentage)
-# 
-# leaflet(health_data_json) %>%
-#   setView(lng = 0, lat = 0, zoom = 1) %>%
-#   addPolygons(stroke = FALSE, 
-#               smoothFactor = 0.2, 
-#               fillOpacity = 1,
-#               color = ~pallatte(percentage),
-#               label = paste0(health_data_json$country, ": ", 
-#                              round(health_data_json$percentage, 1), "%"),
-#               highlightOptions = highlightOptions(weight = 5,
-#                                                   color = "#000000",
-#                                                   fillOpacity = 0.7)) %>%
-#   addLegend(pallatte, 
-#             values = ~percentage,
-#             opacity = 0.8,
-#             title = "Interest level (%)",
-#             position = "bottomleft",
-#             labFormat = labelFormat(suffix = "%")) %>%
-#   addControl(html = "<div class='map-title'>Map of interest in learning more about medicine,<br>disease, or health by country</div>",
-#              position = "topright")
+# Determine range from data, ensure it's 0-100 if data is percentage
+min_interest <- floor(min(health_data$percentage, na.rm = TRUE)) 
+max_interest <- ceiling(max(health_data$percentage, na.rm = TRUE))
+
+sliderInput("interest_threshold", 
+            "Minimum % Interested in Health Info:",
+            min = min_interest, 
+            max = max_interest, 
+            # Ensure value is within min/max bounds
+            value = max(min_interest, min(max_interest, round((min_interest + max_interest) / 2))), 
+            step = 1,
+            post = "%") 
+```
+
+## Column {width=75%}
+::: {.card title="Countries by Interest in Health Information"}
+
+```{r}
+#| label: health-table-output
+# Placeholder for the dynamic table
+DTOutput("health_table")
+```
+
+
+```{r}
+#| label: health-table-render
+#| context: server
+# Server logic to render the dynamic DT table
+
+output$health_table <- renderDT({
+  req(input$interest_threshold) # Ensure slider value is available
+  
+  # Filter health data based on slider input
+  filtered_health_data <- health_data %>%
+    filter(percentage >= input$interest_threshold) %>%
+    # Select and rename columns for clarity in the table
+    select(Country = country, `Interest Percentage` = percentage) %>%
+    # Arrange by percentage, descending
+    arrange(`Interest Percentage`)
+  
+  # Create the datatable
+  datatable(filtered_health_data,
+            rownames = FALSE, # Don't show row numbers
+            options = list(
+              pageLength = 10, # Show 10 rows per page
+              autoWidth = TRUE,
+              # Ensure sorting works correctly on the numeric column before formatting
+              order = list(list(1, 'asc')), # Sort by the second column (index 1) ascending
+              columnDefs = list(
+                  list(className = 'dt-center', targets = "_all") # Center align text
+              ) 
+            )) %>%
+    # Use formatRound instead of formatPercentage
+    formatRound('Interest Percentage', digits = 1) 
+
+})
 ```
 :::
